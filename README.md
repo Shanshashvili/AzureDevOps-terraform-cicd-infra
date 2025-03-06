@@ -231,7 +231,7 @@ stages:
 
 ---
 
-## **🚀 Final Benefits of Using Templates**
+## **Final Benefits of Using Templates**
 ✅ **Shorter `azure-pipelines.yml`** (Easier to read and manage).  
 ✅ **Code Reusability** (No duplication; update one template, and it affects all environments).  
 ✅ **Scalability** (Easier to add more environments in the future).  
@@ -239,10 +239,8 @@ stages:
 
 ---
 
-## **🎯 Next Steps**
+## **Next Steps**
 1️⃣ **Create a `templates/` folder and save each template file.**  
 2️⃣ **Modify `azure-pipelines.yml` to reference the templates.**  
 3️⃣ **Commit and push the changes to test the pipeline.**  
-4️⃣ **Enjoy a cleaner, maintainable, and scalable pipeline!** 🚀  
-
-Would you like any refinements or explanations? 😊
+4️⃣ **Enjoy a cleaner, maintainable, and scalable pipeline!**   
