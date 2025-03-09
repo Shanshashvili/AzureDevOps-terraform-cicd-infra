@@ -1,5 +1,7 @@
 ## This task requires the creation of a backend resource group, a storage account, a container, and the generation of five backend keys.
 
+---
+
 ## NOTE: Template is not tested
 ---
 ## **How to Use Templates in Azure DevOps Pipelines**
