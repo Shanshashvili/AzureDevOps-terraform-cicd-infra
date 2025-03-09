@@ -1,18 +1,12 @@
 trigger: 
-- none 
-#  branches: 
-#    include:
-#      - main
-#      - feature/*
+#  - main # none 
+  branches:
+    include:
+      - main
+      - feature/*
 
 variables:
-- group: Terraform-Backend  # Terraform state variables
-- group: Terraform-Provider  # Terraform provider variables
-- group: AzureDevOps-Provider  # Azure DevOps provider variables
-- group: DEV-Environment
-- group: QA-Environment
-- group: UAT-Environment
-- group: PROD-Environment
+  - group: Terraform-Backend
 
 
 stages:
@@ -38,28 +32,24 @@ stages:
       workingDirectory: $(Build.SourcesDirectory)
       
     # Install Terraform
-    - task: TerraformInstaller@0
+    - task: TerraformInstaller@1
       displayName: "Install Terraform"
       inputs:
         terraformVersion: "latest"
      
     
     # erraform Initialization
-    - task: TerraformTaskV2@2
+    - task: TerraformTaskV4@4
       displayName: "Terraform Init"
       inputs:
         provider: "azurerm"
         command: "init"
-        backendServiceArm: "$(AZURE_SERVICE_CONNECTION)"  # Use your Azure service connection
+        backendServiceArm: "GeneralServiceConnection"  # Use your Azure service connection
         backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
         backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
         backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
         backendAzureRmKey: "$(TF_STATE_KEY)"
       env:
-        ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-        ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-        ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-        ARM_TENANT_ID: "$(ARM_TENANT_ID)"
         TF_LOG: DEBUG  # Enable debug logging
 
     # Terraform Format Check (fmt) 
@@ -68,16 +58,12 @@ stages:
       displayName: "Terraform Format Check"
 
     # Terraform Validation
-    - task: TerraformTaskV2@2
+    - task: TerraformTaskV4@4
       displayName: "Terraform Validate"
       inputs:
         provider: "azurerm"
         command: "validate"
       env:
-        ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-        ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-        ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-        ARM_TENANT_ID: "$(ARM_TENANT_ID)"
         TF_LOG: DEBUG  
 
     # Archive & Upload Artifacts
@@ -94,7 +80,11 @@ stages:
 # 2️ TERRAFORM PLAN & APPLY STAGES for DEV
 - stage: Terraform_DEV
   displayName: "Terraform Plan & Apply (DEV)"
+  variables:
+      - group: DEV-Environment
+      - group: Azure-SQL-Database
   dependsOn: Build
+  condition: succeeded()
   jobs:
   - deployment: Plan_DEV
     displayName: "Terraform Plan (DEV)"
@@ -115,43 +105,41 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"  
 
-          - task: TerraformInstaller@0
+          - task: TerraformInstaller@1
             displayName: "Install Terraform"
             inputs:
               terraformVersion: "latest"
 
-          - task: TerraformTaskV2@2  
+          - task: TerraformTaskV4@4 
             displayName: "Terraform Init"
             inputs:
               provider: "azurerm"
               command: "init"
-              backendServiceArm: "$(AZURE_SERVICE_CONNECTION)"
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(DEV_TF_STATE_KEY)"
             env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"  
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
               TF_LOG: DEBUG    
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Plan (DEV)"
             inputs:
               provider: "azurerm"
               command: "plan"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"     
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(DEV_TF_STATE_KEY)"  
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)"  
+            env: 
               TF_LOG: DEBUG      
  
   - job: waitForValidation
@@ -188,39 +176,55 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"
 
-          # Reinitialize Terraform with the -reconfigure flag
-          - script: terraform init -reconfigure
-            displayName: "Reinitialize Terraform Backend"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"
-              TF_LOG: DEBUG 
-          
-          # terraform apply    
-          - task: TerraformTaskV2@2
-            displayName: "Terraform Apply (DEV)"
+          # Install Terraform
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
             inputs:
-              provider: "azurerm"
-              command: "apply"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              terraformVersion: "latest"
+
+          # Terraform Init
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(DEV_TF_STATE_KEY)"
             env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)" 
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)" 
-              TF_LOG: DEBUG     
+              TF_LOG: DEBUG 
+          
+          # terraform apply    
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply (DEV)"
+            inputs:
+              provider: "azurerm"
+              command: "apply"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"
+              backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
+              backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
+              backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
+              backendAzureRmKey: "$(DEV_TF_STATE_KEY)"
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)"  
+            env: 
+              TF_LOG: DEBUG 
 
-              
+
 # 3 TERRAFORM PLAN & APPLY STAGES for QA
 - stage: Terraform_QA
   displayName: "Terraform Plan & Apply (QA)"
+  variables:
+      - group: QA-Environment
+      - group: Azure-SQL-Database
   dependsOn: Build
+  condition: succeeded()
   jobs:
   - deployment: Plan_QA
     displayName: "Terraform Plan (QA)"
@@ -241,43 +245,41 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"  
 
-          - task: TerraformInstaller@0
+          - task: TerraformInstaller@1
             displayName: "Install Terraform"
             inputs:
               terraformVersion: "latest"
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4  
             displayName: "Terraform Init"
             inputs:
               provider: "azurerm"
               command: "init"
-              backendServiceArm: "$(AZURE_SERVICE_CONNECTION)"
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(QA_TF_STATE_KEY)"
+              backendAzureRmKey: "$(QA_TF_STATE_KEY)"         
             env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"  
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
               TF_LOG: DEBUG    
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Plan (QA)"
             inputs:
               provider: "azurerm"
               command: "plan"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"      
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(QA_TF_STATE_KEY)"   
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              backendAzureRmKey: "$(QA_TF_STATE_KEY)" 
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)" 
+            env:  
               TF_LOG: DEBUG      
  
   - job: waitForValidation
@@ -314,42 +316,56 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"
 
-          # Reinitialize Terraform with the -reconfigure flag
-          - script: terraform init -reconfigure
-            displayName: "Reinitialize Terraform Backend"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(QA_TF_STATE_KEY)"
-              TF_LOG: DEBUG 
+          # Terraform intall
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: "latest"
           
+          - task: TerraformTaskV4@4  
+            displayName: "Terraform Init"
+            inputs:
+              provider: "azurerm"
+              command: "init"
+              backendServiceArm: "GeneralServiceConnection"
+              backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
+              backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
+              backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
+              backendAzureRmKey: "$(QA_TF_STATE_KEY)"         
+            env:
+              TF_LOG: DEBUG  
+
           # terraform apply    
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Apply (QA)"
             inputs:
               provider: "azurerm"
               command: "apply"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"              
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(QA_TF_STATE_KEY)"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)" 
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)" 
-              TF_LOG: DEBUG   
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)"  
+            env: 
+              TF_LOG: DEBUG     
 
-              
+
 # 4 TERRAFORM PLAN & APPLY STAGES for UAT
 - stage: Terraform_UAT
   displayName: "Terraform Plan & Apply (UAT)"
+  variables:
+      - group: UAT-Environment
+      - group: Azure-SQL-Database
   dependsOn: 
     - Terraform_DEV
     - Terraform_QA
-  condition: succeeded()
+  condition: succeeded()  
   jobs:
   - deployment: Plan_UAT
     displayName: "Terraform Plan (UAT)"
@@ -370,43 +386,41 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"  
 
-          - task: TerraformInstaller@0
+          - task: TerraformInstaller@1
             displayName: "Install Terraform"
             inputs:
               terraformVersion: "latest"
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4  
             displayName: "Terraform Init"
             inputs:
               provider: "azurerm"
               command: "init"
-              backendServiceArm: "$(AZURE_SERVICE_CONNECTION)"
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(UAT_TF_STATE_KEY)"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"  
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              backendAzureRmKey: "$(UAT_TF_STATE_KEY)"    
+            env:  
               TF_LOG: DEBUG    
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Plan (UAT)"
             inputs:
               provider: "azurerm"
               command: "plan"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(UAT_TF_STATE_KEY)"  
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              backendAzureRmKey: "$(UAT_TF_STATE_KEY)" 
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)" 
+            env: 
               TF_LOG: DEBUG      
  
   - job: waitForValidation
@@ -443,40 +457,54 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"
 
-          # Reinitialize Terraform with the -reconfigure flag
-          - script: terraform init -reconfigure
-            displayName: "Reinitialize Terraform Backend"
+           # Terraform intall
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: "latest"
+          
+          - task: TerraformTaskV4@4  
+            displayName: "Terraform Init"
+            inputs:
+              provider: "azurerm"
+              command: "init"
+              backendServiceArm: "GeneralServiceConnection"
+              backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
+              backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
+              backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
+              backendAzureRmKey: "$(UAT_TF_STATE_KEY)"         
             env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"
               TF_LOG: DEBUG 
           
           # terraform apply    
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Apply (UAT)"
             inputs:
               provider: "azurerm"
               command: "apply"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(UAT_TF_STATE_KEY)"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)" 
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)" 
-              TF_LOG: DEBUG   
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)"  
+            env: 
+              TF_LOG: DEBUG    
 
-              
+
 # 5 TERRAFORM PLAN & APPLY STAGES for PROD
 - stage: Terraform_PROD
   displayName: "Terraform Plan & Apply (PROD)"
+  variables:
+      - group: PROD-Environment
+      - group: Azure-SQL-Database
   dependsOn: Terraform_UAT
-  condition: succeeded()
+  condition: succeeded()  
   jobs:
   - deployment: Plan_PROD
     displayName: "Terraform Plan (PROD)"
@@ -497,54 +525,52 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"  
 
-          - task: TerraformInstaller@0
+          - task: TerraformInstaller@1
             displayName: "Install Terraform"
             inputs:
               terraformVersion: "latest"
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4  
             displayName: "Terraform Init"
             inputs:
               provider: "azurerm"
               command: "init"
-              backendServiceArm: "$(AZURE_SERVICE_CONNECTION)"
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(PROD_TF_STATE_KEY)"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"  
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              backendAzureRmKey: "$(PROD_TF_STATE_KEY)"       
+            env: 
               TF_LOG: DEBUG    
 
-          - task: TerraformTaskV2@2
+          - task: TerraformTaskV4@4
             displayName: "Terraform Plan (PROD)"
             inputs:
               provider: "azurerm"
               command: "plan"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"   
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
-              backendAzureRmKey: "$(PROD_TF_STATE_KEY)"   
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)"  
+              backendAzureRmKey: "$(PROD_TF_STATE_KEY)"  
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)" 
+            env: 
               TF_LOG: DEBUG      
  
   - job: waitForValidation
-    displayName: Wait for external validation - 2 Approvers
+    displayName: Wait for external validation
     pool: server
     timeoutInMinutes: 4320 # job times out in 3 days
     steps:
     - task: ManualValidation@0
       timeoutInMinutes: 2880 # task times out in 2 day
       inputs:
-        notifyUsers: "your-email@example.com, approver2@example.com" # define here mail
+        notifyUsers: "your-email@example.com" # define here mail
         instructions: 'Please validate the build configuration and resume'
         onTimeout: 'resume'
 
@@ -570,30 +596,40 @@ stages:
           - script: ls -R $(System.DefaultWorkingDirectory)
             displayName: "List Files in Working Directory"
 
-          # Reinitialize Terraform with the -reconfigure flag
-          - script: terraform init -reconfigure
-            displayName: "Reinitialize Terraform Backend"
-            env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)"
-              ARM_TENANT_ID: "$(PROD_TF_STATE_KEY)"
-              TF_LOG: DEBUG 
-          
-          # terraform apply    
-          - task: TerraformTaskV2@2
-            displayName: "Terraform Apply (PROD)"
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: "latest"
+
+          - task: TerraformTaskV4@4 
+            displayName: "Terraform Init"
             inputs:
               provider: "azurerm"
-              command: "apply"
-              environmentServiceNameAzureRM: "$(AZURE_SERVICE_CONNECTION)"
+              command: "init"
+              backendServiceArm: "GeneralServiceConnection"
               backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
               backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
               backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
               backendAzureRmKey: "$(PROD_TF_STATE_KEY)"
             env:
-              ARM_CLIENT_ID: "$(ARM_CLIENT_ID)"  
-              ARM_CLIENT_SECRET: "$(ARM_CLIENT_SECRET)"  
-              ARM_SUBSCRIPTION_ID: "$(ARM_SUBSCRIPTION_ID)" 
-              ARM_TENANT_ID: "$(ARM_TENANT_ID)" 
-              TF_LOG: DEBUG   
+              TF_LOG: DEBUG 
+          
+          # terraform apply    
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply (PROD)"
+            inputs:
+              provider: "azurerm"
+              command: "apply"
+              environmentServiceNameAzureRM: "GeneralServiceConnection"
+              backendAzureRmResourceGroupName: "$(TF_STATE_RESOURCE_GROUP)"
+              backendAzureRmStorageAccountName: "$(TF_STATE_STORAGE_ACCOUNT)"
+              backendAzureRmContainerName: "$(TF_STATE_CONTAINER)"
+              backendAzureRmKey: "$(PROD_TF_STATE_KEY)"
+              commandOptions: >
+                -var "RESOURCE_NAME_PREFIX=$(RESOURCE_NAME_PREFIX)" 
+                -var "LOCATION=$(LOCATION)" 
+                -var "ENV=$(ENV)" 
+                -var "SQL_SERVER_ADMINISTRATOR_LOGIN=$(SQL_ADMIN)" 
+                -var "SQL_SERVER_ADMINISTRATOR_PASSWORD=$(SQL_PASSWORD)"  
+            env:
+              TF_LOG: DEBUG     
