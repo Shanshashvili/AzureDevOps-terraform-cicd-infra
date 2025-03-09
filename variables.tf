@@ -1,40 +1,50 @@
-variable "azure_subscription_id" {
-  type        = string
-  description = "Azure Subscription ID"
+variable "LOCATION" {}
+variable "RESOURCE_NAME_PREFIX" {}
+variable "ENV" {}
+variable "SQL_SERVER_ADMINISTRATOR_LOGIN" {}
+variable "SQL_SERVER_ADMINISTRATOR_PASSWORD" {
+  sensitive = true
 }
 
-variable "azure_tenant_id" {
-  type        = string
-  description = "Azure Tenant ID"
+variable "sql_server_version" {
+  default = "12.0"
+}
+variable "sql_server_connection_policy" {
+  default = "Default"
+}
+variable "sql_server_firewall_rules" {
+  type = map(any)
+  default = {
+    allow_azure_services = {
+      start_ip_address = "0.0.0.0"
+      end_ip_address   = "0.0.0.0"
+    }
+  }
+}
+variable "edition" {
+  default = "Basic"
+}
+variable "collation" {
+  default = "SQL_Latin1_General_CP1_CI_AS"
+}
+variable "max_size_gigabytes" {
+  default = 1
+}
+variable "zone_redundant" {
+  type    = bool
+  default = false
+}
+variable "os_type" {
+  default = "Windows"
 }
 
-variable "azure_devops_org_url" {
-  type        = string
-  description = "Azure DevOps Organization URL"
+variable "app_service_plan_sku" {
+  default = "S1"
 }
 
-variable "azure_devops_pat" {
-  type        = string
-  description = "Azure DevOps Personal Access Token"
-  sensitive   = true
+variable "sql_db_sku" {
+  default = "S0"
 }
-
-variable "tf_state_resource_group" {
-  type        = string
-  description = "Resource group where the terraform state is located"
-}
-
-variable "tf_state_storage_account" {
-  type        = string
-  description = "Storage Account where the TF state is located"
-}
-
-variable "tf_state_container" {
-  type        = string
-  description = "Container where the TF state is located"
-}
-
-variable "tf_state_key" {
-  type        = string
-  description = "TF state key where the TF state is located"
+variable "connection_string_name" {
+  default = "MyDbConnection"
 }
